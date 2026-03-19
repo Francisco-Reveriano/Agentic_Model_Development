@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,8 @@ from typing import Any, Optional
 
 from backend.callbacks import SSECallbackHandler
 from backend.config import Settings, create_anthropic_model, get_settings
+
+logger = logging.getLogger(__name__)
 
 # Agent stage directory names
 STAGE_DIRS = {
@@ -62,6 +65,11 @@ class PipelineOrchestrator:
 
         self.output_root = self.settings.output_abs_path / run_id
         self.sequence = self._resolve_sequence()
+
+        from backend.logging_config import add_pipeline_log_handler
+
+        self._run_log_handler = add_pipeline_log_handler(self.output_root)
+        logger.info("Pipeline %s initialized -- agents=%s, models=%s", run_id, self.sequence, self.models)
 
     # ------------------------------------------------------------------
 
@@ -118,17 +126,22 @@ class PipelineOrchestrator:
 
     # ------------------------------------------------------------------
 
-    def _get_agent(self, agent_name: str) -> Any:
+    def _get_agent(self, agent_name: str, callback: Any = None) -> Any:
         """Import and return the agent instance by name."""
         if agent_name == "Data_Agent":
             from backend.agents.data_agent import create_data_agent
-            return create_data_agent(self.settings, self._stage_dir(agent_name))
+            return create_data_agent(self.settings, self._stage_dir(agent_name), callback_handler=callback)
         elif agent_name == "Feature_Agent":
             from backend.agents.feature_agent import create_feature_agent
-            return create_feature_agent(self.settings, self._stage_dir(agent_name))
+            return create_feature_agent(
+                self.settings,
+                self._stage_dir(agent_name),
+                data_handoff_dir=self._stage_dir("Data_Agent"),
+                callback_handler=callback,
+            )
         elif agent_name == "PD_Agent":
             from backend.agents.pd_agent import create_pd_agent
-            return create_pd_agent(self.settings, self._stage_dir(agent_name))
+            return create_pd_agent(self.settings, self._stage_dir(agent_name), callback_handler=callback)
         elif agent_name == "LGD_Agent":
             from backend.agents.lgd_agent import create_lgd_agent
             return create_lgd_agent(self.settings, self._stage_dir(agent_name))
@@ -140,7 +153,7 @@ class PipelineOrchestrator:
             return create_el_agent(self.settings, self._stage_dir(agent_name))
         elif agent_name == "Report_Agent":
             from backend.agents.report_agent import create_report_agent
-            return create_report_agent(self.settings, self._stage_dir(agent_name))
+            return create_report_agent(self.settings, self._stage_dir(agent_name), callback_handler=callback)
         else:
             raise ValueError(f"Unknown agent: {agent_name}")
 
@@ -167,6 +180,55 @@ class PipelineOrchestrator:
         return prompt
 
     # ------------------------------------------------------------------
+    # Post-agent fallback: ensure critical output files exist
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _call_tool(tool_func, **kwargs) -> dict:
+        """Call a Strands @tool-decorated function directly with kwargs."""
+        # Access the raw function if wrapped by @tool decorator
+        fn = getattr(tool_func, "_tool_func", tool_func)
+        return fn(**kwargs)
+
+    def _ensure_data_agent_outputs(self) -> None:
+        """If Data_Agent didn't call write_cleaned_dataset, call it directly."""
+        stage_dir = self._stage_dir("Data_Agent")
+        if (stage_dir / "cleaned_features.parquet").exists():
+            return  # Agent produced outputs correctly
+
+        logger.warning("Data_Agent did not produce parquet files — running write_cleaned_dataset fallback")
+        from backend.tools.data_tools import write_cleaned_dataset
+        result = self._call_tool(write_cleaned_dataset, output_dir=str(stage_dir), run_id=self.run_id)
+        logger.info("write_cleaned_dataset fallback result: %s", result.get("status", "unknown"))
+
+    def _ensure_feature_agent_outputs(self) -> None:
+        """If Feature_Agent didn't produce outputs, run feature pipeline directly."""
+        feature_dir = self._stage_dir("Feature_Agent")
+        data_dir = self._stage_dir("Data_Agent")
+
+        if (feature_dir / "feature_matrix.parquet").exists():
+            return  # Agent produced outputs correctly
+
+        logger.warning("Feature_Agent did not produce feature_matrix — running fallback pipeline")
+        from backend.tools.feature_tools import (
+            engineer_ratio_features,
+            select_features,
+            write_feature_matrix,
+        )
+
+        # Step 1: Engineer ratio features (writes back to data_dir's cleaned_features.parquet)
+        result = self._call_tool(engineer_ratio_features, data_dir=str(data_dir))
+        logger.info("engineer_ratio_features fallback: %s", result.get("status", "unknown"))
+
+        # Step 2: Select features (writes feature_matrix.parquet to data_dir)
+        result = self._call_tool(select_features, method="combined", threshold=0.02, data_dir=str(data_dir))
+        logger.info("select_features fallback: %s", result.get("status", "unknown"))
+
+        # Step 3: Write feature matrix to feature_dir
+        result = self._call_tool(write_feature_matrix, output_dir=str(feature_dir), data_dir=str(data_dir))
+        logger.info("write_feature_matrix fallback: %s", result.get("status", "unknown"))
+
+    # ------------------------------------------------------------------
 
     async def run(self) -> None:
         """Execute the full pipeline."""
@@ -186,57 +248,86 @@ class PipelineOrchestrator:
         completed_agents: list[str] = []
         pipeline_start = time.time()
 
-        for idx, agent_name in enumerate(self.sequence, 1):
-            callback = SSECallbackHandler(agent_name, self.event_queue)
-            callback.on_agent_start(stage=idx, total_stages=total)
+        try:
+            for idx, agent_name in enumerate(self.sequence, 1):
+                callback = SSECallbackHandler(agent_name, self.event_queue)
+                callback.on_agent_start(stage=idx, total_stages=total)
+                logger.info("Starting agent %s (%d/%d)", agent_name, idx, total)
 
-            started_at = datetime.now(timezone.utc).isoformat()
-            t0 = time.time()
+                started_at = datetime.now(timezone.utc).isoformat()
+                t0 = time.time()
 
-            try:
-                agent = self._get_agent(agent_name)
-                prompt = self._build_agent_prompt(agent_name)
+                try:
+                    # Set module-level callback so tools can emit SSE events
+                    from backend.tools.data_tools import set_callback_handler
+                    set_callback_handler(callback)
 
-                # Run the synchronous Strands agent in a thread
-                result = await asyncio.to_thread(agent, prompt)
+                    agent = self._get_agent(agent_name, callback=callback)
+                    prompt = self._build_agent_prompt(agent_name)
 
-                duration = time.time() - t0
-                self._write_handoff(agent_name, "success", started_at, duration)
-                callback.on_agent_complete("success", duration)
-                completed_agents.append(agent_name)
+                    # Run the synchronous Strands agent in a thread
+                    result = await asyncio.to_thread(agent, prompt)
 
-            except Exception as exc:
-                duration = time.time() - t0
-                self._write_handoff(
-                    agent_name, "failed", started_at, duration,
-                    errors=[str(exc)],
-                )
-                callback.on_agent_error(str(exc), recoverable=False)
-                # Halt pipeline on failure
-                await self.event_queue.put({
-                    "event": "pipeline_complete",
-                    "data": {
-                        "run_id": self.run_id,
-                        "status": "failed",
-                        "failed_agent": agent_name,
-                        "completed_agents": completed_agents,
-                        "total_duration_s": round(time.time() - pipeline_start, 1),
-                        "error": str(exc),
-                    },
-                })
-                return
+                    # Run post-agent fallbacks to ensure critical outputs exist
+                    if agent_name == "Data_Agent":
+                        await asyncio.to_thread(self._ensure_data_agent_outputs)
+                    elif agent_name == "Feature_Agent":
+                        await asyncio.to_thread(self._ensure_feature_agent_outputs)
 
-        # All agents completed successfully
-        await self.event_queue.put({
-            "event": "pipeline_complete",
-            "data": {
-                "run_id": self.run_id,
-                "status": "completed",
-                "completed_agents": completed_agents,
-                "total_duration_s": round(time.time() - pipeline_start, 1),
-                "reports": [
-                    str(p.name)
-                    for p in (self.output_root / "07_reports").glob("*.docx")
-                ],
-            },
-        })
+                    duration = time.time() - t0
+                    # Only write orchestrator handoff if agent didn't write its own
+                    existing = self._read_handoff(agent_name)
+                    if not existing or not existing.get("output_files"):
+                        self._write_handoff(agent_name, "success", started_at, duration)
+                    else:
+                        # Merge timing metadata into agent-written handoff
+                        existing["started_at"] = started_at
+                        existing["completed_at"] = datetime.now(timezone.utc).isoformat()
+                        existing["duration_s"] = round(duration, 1)
+                        path = self._stage_dir(agent_name) / "handoff.json"
+                        path.write_text(json.dumps(existing, indent=2, default=str))
+                    callback.on_agent_complete("success", duration)
+                    completed_agents.append(agent_name)
+                    logger.info("Agent %s completed in %.1fs", agent_name, duration)
+
+                except Exception as exc:
+                    duration = time.time() - t0
+                    logger.exception("Agent %s failed after %.1fs", agent_name, duration)
+                    self._write_handoff(
+                        agent_name, "failed", started_at, duration,
+                        errors=[str(exc)],
+                    )
+                    callback.on_agent_error(str(exc), recoverable=False)
+                    # Halt pipeline on failure
+                    await self.event_queue.put({
+                        "event": "pipeline_complete",
+                        "data": {
+                            "run_id": self.run_id,
+                            "status": "failed",
+                            "failed_agent": agent_name,
+                            "completed_agents": completed_agents,
+                            "total_duration_s": round(time.time() - pipeline_start, 1),
+                            "error": str(exc),
+                        },
+                    })
+                    return
+
+            # All agents completed successfully
+            total_duration = round(time.time() - pipeline_start, 1)
+            logger.info("Pipeline %s finished -- %d agents, %.1fs", self.run_id, len(completed_agents), total_duration)
+            await self.event_queue.put({
+                "event": "pipeline_complete",
+                "data": {
+                    "run_id": self.run_id,
+                    "status": "completed",
+                    "completed_agents": completed_agents,
+                    "total_duration_s": total_duration,
+                    "reports": [
+                        str(p.name)
+                        for p in (self.output_root / "07_reports").glob("*.docx")
+                    ],
+                },
+            })
+        finally:
+            logging.getLogger().removeHandler(self._run_log_handler)
+            self._run_log_handler.close()

@@ -6,10 +6,13 @@ using joblib. Automatically handles resource constraints and provides
 progress tracking.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional, Callable
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -175,7 +178,7 @@ def _train_candidates_sequential(
 
     for i, (name, model) in enumerate(candidates):
         if verbose:
-            print(f"Training {i+1}/{len(candidates)}: {name}")
+            logger.info("Training %d/%d: %s", i + 1, len(candidates), name)
 
         try:
             model.fit(X_train, y_train)

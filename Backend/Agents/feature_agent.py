@@ -112,18 +112,27 @@ Output constraints:
 """
 
 
-def create_feature_agent(settings: Settings | None = None, output_dir: Path | None = None) -> Agent:
+def create_feature_agent(
+    settings: Settings | None = None,
+    output_dir: Path | None = None,
+    data_handoff_dir: Path | None = None,
+    callback_handler=None,
+) -> Agent:
     """Factory function to create a Feature_Agent instance."""
     s = settings or get_settings()
     out = output_dir or s.output_abs_path / "02_feature_engineering"
     out.mkdir(parents=True, exist_ok=True)
 
-    # Data_Agent handoff directory
-    data_handoff_dir = s.output_abs_path / "01_data_quality"
+    # Data_Agent handoff directory — use provided or fall back to default
+    data_handoff_dir = data_handoff_dir or s.output_abs_path / "01_data_quality"
 
-    return Agent(
+    kwargs: dict = dict(
         name="Feature_Agent",
         system_prompt=_build_system_prompt(s, out, data_handoff_dir),
         model=create_anthropic_model(s),
         tools=ALL_FEATURE_TOOLS,
     )
+    if callback_handler is not None:
+        kwargs["callback_handler"] = callback_handler
+
+    return Agent(**kwargs)

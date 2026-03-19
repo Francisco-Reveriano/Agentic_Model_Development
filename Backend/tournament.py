@@ -13,12 +13,15 @@ Phases:
 
 from __future__ import annotations
 
+import logging
 import time
 import warnings
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 import pandas as pd
 from scipy import stats as scipy_stats
 from sklearn.inspection import permutation_importance
@@ -297,6 +300,7 @@ class ModelTournament:
 
     def phase1_broad_sweep(self) -> list[LeaderboardEntry]:
         """Fit every candidate with its baseline params and rank on validation."""
+        logger.info("Phase 1 Broad Sweep -- training %d candidates", len(self.candidate_pool))
         leaderboard: list[LeaderboardEntry] = []
 
         for candidate in self.candidate_pool:
@@ -354,6 +358,8 @@ class ModelTournament:
 
     def phase2_feature_consensus(self, leaderboard: list[LeaderboardEntry]) -> FeatureConsensus:
         """Build a cross-model weighted feature importance consensus."""
+        logger.info("Phase 2 Feature Consensus -- %d features, %d trained models",
+                     len(self.X_train.columns), sum(1 for e in leaderboard if e.status == "trained"))
         feature_names = list(self.X_train.columns)
         n_features = len(feature_names)
 
@@ -438,6 +444,7 @@ class ModelTournament:
     ) -> list[LeaderboardEntry]:
         """Hyperparameter + feature-set search for the top-K models."""
         settings = self.settings
+        logger.info("Phase 3 Refinement -- top_k=%d, max_iterations=%d", settings.top_k, settings.max_iterations)
 
         # Only keep successfully trained models
         trained = [e for e in leaderboard if e.status == "trained"]
@@ -629,6 +636,7 @@ class ModelTournament:
 
     def phase4_champion_selection(self, leaderboard: list[LeaderboardEntry]) -> TournamentResult:
         """Apply a weighted rubric to pick the champion."""
+        logger.info("Phase 4 Champion Selection -- %d trained models", sum(1 for e in leaderboard if e.status == "trained"))
         trained = [e for e in leaderboard if e.status == "trained"]
         if not trained:
             raise ValueError("No successfully trained models in the leaderboard.")
@@ -880,6 +888,8 @@ class ModelTournament:
 
     def run_full_tournament(self) -> TournamentResult:
         """Execute all four phases and return the final result."""
+        logger.info("Tournament started -- %d candidates, type=%s, mode=%s",
+                     len(self.candidate_pool), self.model_type, self.settings.scoring_mode)
 
         # Phase 1
         leaderboard = self.phase1_broad_sweep()

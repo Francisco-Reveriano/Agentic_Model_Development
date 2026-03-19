@@ -4,6 +4,10 @@ export type SSEEventType =
   | 'agent_metric'
   | 'agent_complete'
   | 'agent_error'
+  | 'agent_substep'
+  | 'agent_table'
+  | 'agent_chart_data'
+  | 'dq_scorecard_update'
   | 'pipeline_start'
   | 'pipeline_complete'
   | 'pipeline_error'
@@ -46,6 +50,35 @@ export interface AgentCompleteData {
   agent: string
   status: 'success' | 'failed'
   duration_s: number
+}
+
+export interface AgentSubstepData {
+  agent: string
+  substep: string
+  status: 'running' | 'completed'
+}
+
+export interface AgentTableData {
+  agent: string
+  table_name: string
+  columns: string[]
+  rows: unknown[][]
+}
+
+export interface DQTestData {
+  agent: string
+  test_id: string
+  test_name: string
+  status: 'PASS' | 'WARN' | 'FAIL'
+  value: string
+  threshold: string
+  evidence: string
+}
+
+export interface ChartDataEvent {
+  agent: string
+  chart_name: string
+  data: Record<string, unknown>[]
 }
 
 export interface PipelineCompleteData {

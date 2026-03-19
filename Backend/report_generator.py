@@ -13,11 +13,14 @@ Each method returns the Path of the generated .docx file.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from docx import Document
+
+logger = logging.getLogger(__name__)
 from docx.shared import Inches, Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -223,6 +226,7 @@ class ReportGenerator:
 
         filepath = output_path / "data_quality_report.docx"
         doc.save(str(filepath))
+        logger.info("Report saved: %s", filepath)
         return filepath
 
     def generate_model_report(
@@ -557,6 +561,7 @@ class ReportGenerator:
         filename = f"{model_label.lower()}_model_development_report.docx"
         filepath = output_path / filename
         doc.save(str(filepath))
+        logger.info("Report saved: %s", filepath)
         return filepath
 
     def generate_el_report(self, el_data: dict, output_path: Path) -> Path:
@@ -763,6 +768,7 @@ class ReportGenerator:
 
         filepath = output_path / "expected_loss_report.docx"
         doc.save(str(filepath))
+        logger.info("Report saved: %s", filepath)
         return filepath
 
     # ------------------------------------------------------------------

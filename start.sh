@@ -1,8 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
+VENV_DIR=".venv"
+
+# ── Activate virtual environment ─────────────────────────────────────
+if [ ! -d "$VENV_DIR" ]; then
+  echo "Creating virtual environment in $VENV_DIR ..."
+  python3 -m venv "$VENV_DIR"
+fi
+
+echo "Activating virtual environment ($VENV_DIR) ..."
+source "$VENV_DIR/bin/activate"
+
+# ── Install Python dependencies ──────────────────────────────────────
+echo "Installing Python dependencies from requirements.txt ..."
+pip install -q -r requirements.txt
+
+# ── Install frontend dependencies ────────────────────────────────────
+if [ ! -d "frontend/node_modules" ]; then
+  echo "Installing frontend dependencies ..."
+  (cd frontend && npm install)
+fi
 
 # ── Kill previous sessions ───────────────────────────────────────────
 kill_port() {

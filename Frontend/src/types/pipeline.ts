@@ -15,6 +15,7 @@ export interface DatasetInfo {
   row_count: number
   column_count: number
   columns: string[]
+  sample_rows: Record<string, unknown>[]
 }
 
 export type AgentStatus = 'pending' | 'running' | 'completed' | 'failed'

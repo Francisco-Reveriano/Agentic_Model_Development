@@ -7,10 +7,13 @@ and provides real-time status updates to connected clients.
 """
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from typing import Optional, Callable, Any
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -93,11 +96,11 @@ async def emit_heartbeat(
             await queue.put(f"data: {message}\n\n")
 
             if config.verbose:
-                print(f"[Heartbeat] {message}")
+                logger.debug("Heartbeat: %s", message)
 
     except asyncio.CancelledError:
         if config.verbose:
-            print("[Heartbeat] Task cancelled")
+            logger.debug("Heartbeat task cancelled")
         pass
 
 
@@ -198,7 +201,7 @@ class SSEHeartbeatManager:
         self.tasks[stream_id] = task
 
         if self.config.verbose:
-            print(f"[SSE] Added stream {stream_id}")
+            logger.debug("SSE stream added: %s", stream_id)
 
     def remove_stream(self, stream_id: str) -> None:
         """
@@ -215,7 +218,7 @@ class SSEHeartbeatManager:
             del self.queues[stream_id]
 
         if self.config.verbose:
-            print(f"[SSE] Removed stream {stream_id}")
+            logger.debug("SSE stream removed: %s", stream_id)
 
     async def broadcast_message(self, message: str) -> None:
         """
@@ -229,7 +232,7 @@ class SSEHeartbeatManager:
                 await queue.put(message)
             except asyncio.QueueFull:
                 if self.config.verbose:
-                    print("[SSE] Queue full, skipping message")
+                    logger.warning("SSE queue full, skipping message")
 
     def get_active_streams_count(self) -> int:
         """

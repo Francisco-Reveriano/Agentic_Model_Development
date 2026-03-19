@@ -8,9 +8,12 @@ champion models and listing/filtering registered models.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRegistry:
@@ -60,7 +63,8 @@ class ModelRegistry:
             if not isinstance(entries, list):
                 return []
             return entries
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load registry: %s", exc)
             return []
 
     def _save(self, entries: list[dict[str, Any]]) -> None:
@@ -134,6 +138,7 @@ class ModelRegistry:
 
         entries.append(new_entry)
         self._save(entries)
+        logger.info("Registered model %s -- type=%s, champion=%s", model_id, model_type, champion)
 
         return model_id
 

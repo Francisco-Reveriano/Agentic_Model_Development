@@ -5,10 +5,13 @@ Implements robust outlier handling via winsorization. Limits extreme values
 to specified percentiles while preserving distribution shape.
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -181,9 +184,9 @@ def apply_winsorization(
 
         if config.verbose and clipped_count > 0:
             clip_rate = info["clipping_rates"][col]
-            print(
-                f"Column '{col}': clipped {clipped_count} values ({clip_rate:.2f}%) "
-                f"to [{lower_bound:.2f}, {upper_bound:.2f}]"
+            logger.info(
+                "Column '%s': clipped %d values (%.2f%%) to [%.2f, %.2f]",
+                col, clipped_count, clip_rate, lower_bound, upper_bound,
             )
 
     return df_winsorized, info

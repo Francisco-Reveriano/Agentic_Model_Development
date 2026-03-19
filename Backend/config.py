@@ -61,6 +61,16 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def _init_logging() -> None:
+    """Initialize logging from settings. Called once at import time."""
+    from backend.logging_config import setup_logging
+
+    setup_logging(get_settings().log_level)
+
+
+_init_logging()
+
+
 def create_anthropic_model(settings: Settings | None = None) -> AnthropicModel:
     """Factory matching the pattern from the reference Data_Agent.py."""
     s = settings or get_settings()

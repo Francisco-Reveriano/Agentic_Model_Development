@@ -95,23 +95,20 @@ Report types produced:
 def create_report_agent(
     settings: Settings | None = None,
     output_dir: Path | None = None,
+    callback_handler=None,
 ) -> Agent:
-    """Factory function to create a Report_Agent instance.
-
-    Args:
-        settings: Application settings (defaults to get_settings()).
-        output_dir: Output directory for reports (defaults to <output>/07_reports).
-
-    Returns:
-        Configured Strands Agent instance.
-    """
+    """Factory function to create a Report_Agent instance."""
     s = settings or get_settings()
     out = output_dir or s.output_abs_path / "07_reports"
     out.mkdir(parents=True, exist_ok=True)
 
-    return Agent(
+    kwargs: dict = dict(
         name="Report_Agent",
         system_prompt=_build_system_prompt(s, out),
         model=create_anthropic_model(s),
         tools=ALL_REPORT_TOOLS,
     )
+    if callback_handler is not None:
+        kwargs["callback_handler"] = callback_handler
+
+    return Agent(**kwargs)

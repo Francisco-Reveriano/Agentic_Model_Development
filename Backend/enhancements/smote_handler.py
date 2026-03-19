@@ -5,10 +5,13 @@ Detects and corrects class imbalance using Synthetic Minority Over-sampling Tech
 Automatically applies SMOTE when minority class representation falls below threshold.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Tuple, Optional
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -124,20 +127,20 @@ def apply_smote_if_needed(
     info["imbalance_ratio"] = minority_ratio
 
     if config.verbose:
-        print(f"Original class distribution: {info['original_class_dist']}")
-        print(f"Minority ratio: {minority_ratio:.3f}")
+        logger.info("Original class distribution: %s", info['original_class_dist'])
+        logger.info("Minority ratio: %.3f", minority_ratio)
 
     # Check if SMOTE should be applied
     if minority_ratio >= config.minority_threshold_max:
         if config.verbose:
-            print(f"Minority ratio {minority_ratio:.3f} >= threshold {config.minority_threshold_max:.3f}")
-            print("Skipping SMOTE (classes not severely imbalanced)")
+            logger.info("Minority ratio %.3f >= threshold %.3f", minority_ratio, config.minority_threshold_max)
+            logger.info("Skipping SMOTE (classes not severely imbalanced)")
         return X_train, y_train, info
 
     if minority_ratio < config.minority_threshold:
         if config.verbose:
-            print(f"Minority ratio {minority_ratio:.3f} < threshold {config.minority_threshold:.3f}")
-            print("Applying SMOTE to balance classes...")
+            logger.info("Minority ratio %.3f < threshold %.3f", minority_ratio, config.minority_threshold)
+            logger.info("Applying SMOTE to balance classes...")
 
         try:
             from imblearn.over_sampling import SMOTE
@@ -162,15 +165,15 @@ def apply_smote_if_needed(
             info["reason"] = "Class imbalance detected and corrected"
 
             if config.verbose:
-                print(f"After SMOTE: {info['resampled_class_dist']}")
-                print(f"Samples added: {len(y_resampled) - len(y_train)}")
+                logger.info("After SMOTE: %s", info['resampled_class_dist'])
+                logger.info("Samples added: %d", len(y_resampled) - len(y_train))
 
             return X_resampled, y_resampled, info
 
         except ImportError:
             info["reason"] = "SMOTE not available (imbalanced-learn not installed)"
             if config.verbose:
-                print("Warning: SMOTE requested but imbalanced-learn not installed")
+                logger.warning("SMOTE requested but imbalanced-learn not installed")
             return X_train, y_train, info
 
     else:

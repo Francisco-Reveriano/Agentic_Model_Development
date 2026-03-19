@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -5,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 from middleware.routes.models import router as models_router
 from middleware.routes.pipeline import router as pipeline_router
 from middleware.routes.reports import router as reports_router
@@ -23,6 +26,8 @@ app.add_middleware(
 app.include_router(pipeline_router)
 app.include_router(reports_router)
 app.include_router(models_router)
+
+logger.info("Credit Risk Modeling Platform API started")
 
 
 @app.get("/api/health")
@@ -46,6 +51,9 @@ async def dataset_info():
 
         cur.execute(f"PRAGMA table_info(\"{table}\")")
         cols = [row[1] for row in cur.fetchall()]
+
+        cur.execute(f"SELECT * FROM \"{table}\" LIMIT 100")
+        sample_rows = [dict(zip(cols, row)) for row in cur.fetchall()]
     finally:
         conn.close()
 
@@ -55,4 +63,27 @@ async def dataset_info():
         row_count=row_count,
         column_count=len(cols),
         columns=cols,
+        sample_rows=sample_rows,
     )
+
+
+@app.get("/api/dataset/preview")
+async def dataset_preview(limit: int = 50):
+    """Return column names and sample rows for the dataset preview table."""
+    settings = get_settings()
+    db_path = settings.db_abs_path
+    table = settings.db_table
+    cap = max(1, min(limit, 200))
+
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        cur = conn.cursor()
+        cur.execute(f'PRAGMA table_info("{table}")')
+        columns = [row[1] for row in cur.fetchall()]
+
+        cur.execute(f'SELECT * FROM "{table}" LIMIT {cap}')
+        rows = [list(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    return {"columns": columns, "rows": rows}

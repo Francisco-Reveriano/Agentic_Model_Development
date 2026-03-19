@@ -144,24 +144,20 @@ Metric thresholds (from PRD Section 12):
 def create_pd_agent(
     settings: Settings | None = None,
     output_dir: Path | None = None,
+    callback_handler=None,
 ) -> Agent:
-    """Factory function to create a PD_Agent instance.
-
-    Args:
-        settings: Optional Settings override. Defaults to get_settings().
-        output_dir: Optional output directory override. Defaults to
-                    <output_root>/03_pd_model.
-
-    Returns:
-        A configured Strands Agent with PD-specific and shared model tools.
-    """
+    """Factory function to create a PD_Agent instance."""
     s = settings or get_settings()
     out = output_dir or s.output_abs_path / "03_pd_model"
     out.mkdir(parents=True, exist_ok=True)
 
-    return Agent(
+    kwargs: dict = dict(
         name="PD_Agent",
         system_prompt=_build_system_prompt(s, out),
         model=create_anthropic_model(s),
         tools=ALL_MODEL_TOOLS + ALL_PD_TOOLS,
     )
+    if callback_handler is not None:
+        kwargs["callback_handler"] = callback_handler
+
+    return Agent(**kwargs)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,8 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 from middleware.schemas.pipeline import (
     PipelineStartRequest,
     PipelineStartResponse,
@@ -39,6 +42,7 @@ async def _run_pipeline(run_id: str, request: PipelineStartRequest) -> None:
     try:
         await orchestrator.run()
     except Exception as exc:
+        logger.exception("Pipeline %s unhandled error", run_id)
         await queue.put({"event": "pipeline_error", "data": {"error": str(exc)}})
     finally:
         await queue.put(None)  # sentinel to close SSE stream
@@ -61,6 +65,7 @@ async def start_pipeline(
 
     background_tasks.add_task(_run_pipeline, run_id, request)
 
+    logger.info("Pipeline started -- run_id=%s, models=%s", run_id, request.models)
     return PipelineStartResponse(
         run_id=run_id,
         sse_url=f"/api/pipeline/stream/{run_id}",

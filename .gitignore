@@ -47,6 +47,10 @@ Data/Raw/
 # Model artifacts
 *.joblib
 
+# Log files
+logs/
+*.log
+
 # Node
 node_modules/
 frontend/dist/

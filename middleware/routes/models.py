@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 from middleware.schemas.models import ModelMetrics, ModelVersion
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -22,6 +25,7 @@ def _load_registry() -> list[dict]:
 @router.get("/list", response_model=list[ModelVersion])
 async def list_models():
     entries = _load_registry()
+    logger.debug("Listing %d models", len(entries))
     return [
         ModelVersion(
             model_id=e["model_id"],

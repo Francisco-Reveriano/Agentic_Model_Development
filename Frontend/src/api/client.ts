@@ -17,6 +17,9 @@ export const api = {
 
   datasetInfo: () => json<DatasetInfo>('/dataset/info'),
 
+  datasetPreview: (limit = 50) =>
+    json<{ columns: string[]; rows: unknown[][] }>(`/dataset/preview?limit=${limit}`),
+
   startPipeline: (req: PipelineStartRequest) =>
     json<PipelineStartResponse>('/pipeline/start', {
       method: 'POST',
@@ -28,4 +31,10 @@ export const api = {
 
   downloadReportUrl: (runId: string, filename: string) =>
     `${BASE}/reports/${runId}/download/${filename}`,
+
+  reportHtmlUrl: (runId: string, filename: string) =>
+    `${BASE}/reports/${runId}/html/${filename}`,
+
+  downloadReportHtmlUrl: (runId: string, filename: string) =>
+    `${BASE}/reports/${runId}/download-html/${filename}`,
 }

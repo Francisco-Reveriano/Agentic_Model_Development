@@ -26,7 +26,9 @@ export function useSSE(url: string | null) {
 
     const EVENT_TYPES: SSEEventType[] = [
       'agent_start', 'agent_log', 'agent_metric', 'agent_complete',
-      'agent_error', 'pipeline_start', 'pipeline_complete', 'pipeline_error',
+      'agent_error', 'agent_substep', 'agent_table', 'agent_chart_data',
+      'dq_scorecard_update',
+      'pipeline_start', 'pipeline_complete', 'pipeline_error',
       'tournament_start', 'model_trained', 'phase_complete',
       'feature_consensus', 'iteration_update', 'model_pruned',
       'champion_declared', 'heartbeat', 'stream_end',

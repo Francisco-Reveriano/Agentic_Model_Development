@@ -39,3 +39,4 @@ class DatasetInfo(BaseModel):
     row_count: int
     column_count: int
     columns: list[str]
+    sample_rows: list[dict[str, Any]] = []
