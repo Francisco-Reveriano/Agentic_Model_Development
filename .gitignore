@@ -41,3 +41,12 @@ Thumbs.db
 Data/RAW_FILES/
 Data/Intermediate/
 Data/Archive/
+Data/Output/
+Data/Raw/
+
+# Model artifacts
+*.joblib
+
+# Node
+node_modules/
+frontend/dist/
