@@ -38,12 +38,14 @@ Requires a `.env` file at the project root. Key variables:
 
 ## Architecture
 
-### Three-Tier Layout
+### Project Layout
 
 ```
-backend/          Python — 7 Strands agents, tools, tournament engine, report generator
-middleware/       FastAPI — REST endpoints, SSE streaming, Pydantic schemas
-frontend/         React + TypeScript + Vite + Tailwind — UI
+backend/              Python — 7 Strands agents, tools, tournament engine, report generator
+backend/enhancements/ Optional performance, resilience, and operational modules
+middleware/           FastAPI — REST endpoints, SSE streaming, Pydantic schemas
+frontend/             React + TypeScript + Vite + Tailwind — UI
+tests/                pytest suite — test cases, e2e runs, Basel III model exams
 ```
 
 ### Agent Pipeline (sequential, handoff-based)
@@ -92,6 +94,23 @@ def create_*_agent(settings: Settings | None = None, output_dir: Path | None = N
 
 Tools are decorated with `@tool` from strands. Agents use `AnthropicModel` with claude-opus-4-6, 128k max tokens, adaptive thinking, max effort.
 
+### Enhancement Modules (backend/enhancements/)
+
+Optional modules for performance, resilience, and operational improvements:
+
+| Module | Purpose |
+|--------|---------|
+| `agent_timeout.py` | Per-agent timeout limits (e.g., DATA_AGENT: 5min, PD_AGENT: 30min) via Unix signals |
+| `sse_heartbeat.py` | SSE keep-alive heartbeats to prevent client disconnection during long pipelines |
+| `parallel_training.py` | joblib-based multi-core model candidate training with memory limits |
+| `early_stopping.py` | XGBoost/LightGBM early stopping callbacks to halt training at plateau |
+| `smote_handler.py` | Automatic SMOTE when minority class < 5%, plus class weight alternatives |
+| `winsorization_config.py` | Outlier clipping via percentile/std/IQR with pre-configured credit risk thresholds |
+| `scoring_mode.py` | Dual rubric weights for "regulatory" (interpretability) vs "performance" (AUC) modes |
+| `model_comparison.py` | Transform tournament results into visualization-ready formats (bar, radar, heatmap) |
+| `export_leaderboard.py` | Export tournament leaderboards to CSV/Excel/JSON |
+| `run_history.py` | Scan, compare, and rank completed pipeline runs by metric |
+
 ### Key Files
 
 - `backend/config.py` — Centralized `Settings` via pydantic-settings, `create_anthropic_model()` factory
@@ -110,6 +129,31 @@ Tools are decorated with `@tool` from strands. Agents use `AnthropicModel` with 
 
 Vintage-based splits: Train (issue_year <= 2015), Validation (2016), Test (>= 2017).
 
+## Testing
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run by suite
+pytest tests/test_cases/       # TC-01–TC-10: unit-level model property checks
+pytest tests/e2e_runs/         # E2E-01–E2E-05: full/partial pipeline execution
+pytest tests/model_exams/      # ME-01–ME-10: Basel III compliance exams
+
+# Run a single test module
+pytest tests/test_cases/test_tc01_pd_auc_discrimination.py -v
+```
+
+### Test Suites
+
+**test_cases/ (TC-01–TC-10)** — Model property validation: PD discrimination (AUC > 0.75, Gini, KS), calibration (Hosmer-Lemeshow, Brier), PSI stability, LGD accuracy (MAE < 0.10, R² > 0.65), EAD/CCF bounds, EL calculation correctness, tournament phases, feature consensus, refinement convergence, report generation.
+
+**e2e_runs/ (E2E-01–E2E-05)** — End-to-end pipeline scenarios: full regulatory-mode pipeline, PD-only run, performance-mode run, LGD/EAD regression focus, resilience/error-recovery.
+
+**model_exams/ (ME-01–ME-10)** — Basel III IRB compliance per C1 Standalone Use Case Template: data appropriateness (I.DA), data quality (I.DQ), feature engineering (M.FE), methodology selection (M.MS), parameter estimation (M.PE), stability (O.S), robustness (O.R), explainability (O.E), business integration (B.EE), documentation (TI.D). 58 test methods total.
+
+Shared fixtures in `tests/conftest.py` provide sample data, mock tournament results, artifact loaders, and auto-discovery of the latest pipeline run directory.
+
 ## Key Dependencies
 
 | Category | Packages |
@@ -119,4 +163,5 @@ Vintage-based splits: Train (issue_year <= 2015), Validation (2016), Test (>= 20
 | Data | pandas, numpy, scipy, sqlalchemy |
 | Reports | python-docx, matplotlib, seaborn |
 | API | FastAPI, uvicorn, sse-starlette, pydantic |
+| Testing | pytest, imbalanced-learn (SMOTE) |
 | Frontend | React, TypeScript, Vite, Tailwind CSS, react-router-dom, lucide-react |
